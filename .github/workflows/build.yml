@@ -11,6 +11,11 @@ jobs:
   windows:
     name: Windows x64 构建与验证
     runs-on: windows-latest
+    env:
+      # 双保险：程序里已经自己把 stdout 切成 UTF-8 了，这里再兜一层。
+      # Windows 控制台默认 GBK/cp1252，打印中文会抛 UnicodeEncodeError。
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
     steps:
       - uses: actions/checkout@v4
 

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import os
-import resource
 import sys
 import tempfile
 import time
@@ -18,10 +17,15 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from filebatch.console import ensure_utf8_output  # noqa: E402
+
+ensure_utf8_output()
+
 
 def 峰值内存_MB() -> float:
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    return rss / (1024 * 1024) if sys.platform == "darwin" else rss / 1024
+    from filebatch.sysinfo import peak_memory_mb
+
+    return peak_memory_mb()
 
 
 def main() -> int:

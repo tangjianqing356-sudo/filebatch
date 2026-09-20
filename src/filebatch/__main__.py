@@ -11,7 +11,7 @@ _T0 = time.perf_counter()
 
 def _measure_startup() -> int:
     """测冷启动：从进程起来到主窗口可见。打包后跑这个才算数。"""
-    import resource
+    from filebatch.sysinfo import peak_memory_mb
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from filebatch.ui.app import create_app
@@ -24,16 +24,12 @@ def _measure_startup() -> int:
         app.processEvents()
     用时 = (time.perf_counter() - _T0) * 1000
 
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    内存 = rss / (1024 * 1024) if sys.platform == "darwin" else rss / 1024
-    print(f"冷启动 {用时:.0f} ms | 空闲内存 {内存:.1f} MB")
+    print(f"冷启动 {用时:.0f} ms | 空闲内存 {peak_memory_mb():.1f} MB")
 
     for i in range(len(win.pages)):
         win.page_at(i)
         app.processEvents()
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    内存全 = rss / (1024 * 1024) if sys.platform == "darwin" else rss / 1024
-    print(f"六页全开后内存 {内存全:.1f} MB")
+    print(f"六页全开后内存 {peak_memory_mb():.1f} MB")
     return 0
 
 
@@ -59,6 +55,11 @@ def _screenshot(path: str) -> int:
 
 
 def main() -> int:
+    # 必须在任何 print 之前：Windows 控制台默认 GBK/cp1252，打中文会直接崩
+    from filebatch.console import ensure_utf8_output
+
+    ensure_utf8_output()
+
     if "--screenshot" in sys.argv:
         i = sys.argv.index("--screenshot")
         return _screenshot(sys.argv[i + 1])
