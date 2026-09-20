@@ -1,13 +1,16 @@
 """主窗口：左边功能列表，右边对应的页面。"""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDeadlineTimer, QElapsedTimer, Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMessageBox,
+    QProgressDialog,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -118,8 +121,56 @@ class MainWindow(QMainWindow):
     def rename_page(self) -> RenamePage:
         return self._ensure_page(0)  # type: ignore[return-value]
 
+    # ---------------- 安全退出 ----------------
+
+    def _busy_pages(self) -> list:
+        return [p for p in self.pages if p is not None and getattr(p, "is_busy", lambda: False)()]
+
     def closeEvent(self, event) -> None:  # noqa: N802, ANN001
-        """关窗前把所有页面的后台线程都收干净。"""
+        """关窗时如果还有任务在跑，必须先问用户，并等当前文件写完再退出。
+
+        直接退出是危险的：worker 在两个文件之间才检查取消标志，
+        进程如果这时候没了，正在写的那个文件会变成残缺的半截文件。
+        """
+        忙碌 = self._busy_pages()
+        if 忙碌:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle("任务正在执行")
+            box.setText("当前任务仍在执行，是否停止任务并退出？")
+            box.setInformativeText(
+                "已经处理完的文件会保留，不会被撤销。\n"
+                "正在处理的这一个文件会先写完，再安全退出。"
+            )
+            停止 = box.addButton("停止任务并退出", QMessageBox.ButtonRole.DestructiveRole)
+            继续 = box.addButton("继续执行", QMessageBox.ButtonRole.RejectRole)
+            # 默认是"继续执行"：回车和 Esc 都不应该把用户的任务弄没
+            box.setDefaultButton(继续)
+            box.setEscapeButton(继续)
+            box.exec()
+
+            if box.clickedButton() is not 停止:
+                event.ignore()
+                return
+
+            if not self._wait_for_safe_stop(忙碌):
+                # 等太久了，让用户自己决定要不要硬退
+                再问 = QMessageBox(self)
+                再问.setIcon(QMessageBox.Icon.Critical)
+                再问.setWindowTitle("任务还没停下来")
+                再问.setText("当前文件处理时间较长，还没能安全停止。")
+                再问.setInformativeText(
+                    "现在强制退出，正在写入的那个文件可能会不完整。\n建议再等一会儿。"
+                )
+                强退 = 再问.addButton("仍然强制退出", QMessageBox.ButtonRole.DestructiveRole)
+                等待 = 再问.addButton("继续等待", QMessageBox.ButtonRole.RejectRole)
+                再问.setDefaultButton(等待)
+                再问.setEscapeButton(等待)
+                再问.exec()
+                if 再问.clickedButton() is not 强退:
+                    event.ignore()
+                    return
+
         for page in self.pages:
             if page is None:
                 continue
@@ -127,3 +178,33 @@ class MainWindow(QMainWindow):
             if stop is not None:
                 stop()
         event.accept()
+
+    def _wait_for_safe_stop(self, 忙碌: list, 超时毫秒: int = 15000) -> bool:
+        """请求停止并等它们收尾，期间给用户一个"正在安全停止"的提示。
+
+        :return: True 表示都停下来了
+        """
+        for page in 忙碌:
+            page.request_stop()
+
+        dlg = QProgressDialog("正在安全停止，等当前文件处理完…", "", 0, 0, self)
+        dlg.setWindowTitle("正在退出")
+        dlg.setCancelButton(None)          # 这一步不能取消，取消就等于强退
+        dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        dlg.setMinimumDuration(0)
+        dlg.show()
+
+        timer = QElapsedTimer()
+        timer.start()
+        try:
+            while timer.elapsed() < 超时毫秒:
+                if not self._busy_pages():
+                    return True
+                QApplication.processEvents()
+                for page in self._busy_pages():
+                    worker = getattr(page, "_worker", None)
+                    if worker is not None:
+                        worker.wait(QDeadlineTimer(50))
+            return not self._busy_pages()
+        finally:
+            dlg.close()

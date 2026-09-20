@@ -40,7 +40,9 @@ class PathLimit:
         if self.probe_error:
             return f"无法探测路径长度上限：{self.probe_error}"
         if not self.has_limit:
-            return "当前输出位置没有明显的路径长度限制"
+            # 措辞刻意保守：探测只能说明"试到 400 字符还能建"，
+            # 不能保证所有 API、所有路径形态都没有限制。
+            return f"当前环境检测到可支持较长路径（已试到 {NO_LIMIT_PROBE} 字符仍可创建）"
         return f"当前输出位置的路径长度上限约为 {self.max_path} 个字符"
 
 

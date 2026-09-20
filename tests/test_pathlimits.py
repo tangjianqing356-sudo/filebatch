@@ -33,7 +33,15 @@ def test_探测绝不碰用户目录(tmp_path):
 
 def test_探测结果有中文描述():
     desc = probe_path_limit().describe()
-    assert "路径长度" in desc or "限制" in desc
+    assert "路径" in desc
+
+
+def test_没测出限制时措辞要保守():
+    """不能说"没有限制"——探测只证明试到 400 字符还能建，不代表所有情况都行。"""
+    limit = PathLimit(max_path=0, max_name=255)
+    desc = limit.describe()
+    assert "可支持较长路径" in desc
+    assert "没有限制" not in desc and "无限制" not in desc
 
 
 def test_没有限制时不拦任何路径():

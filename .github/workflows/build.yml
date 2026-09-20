@@ -47,6 +47,15 @@ jobs:
       - name: 记录冷启动与内存
         run: dist_app/FileBatchTool/FileBatchTool.exe --measure-startup
 
+      - name: 各 DPI 缩放下截图（用打包后的 exe，拿真实 Windows 渲染）
+        run: .venv/Scripts/python.exe scripts/check_dpi.py --exe dist_app/FileBatchTool/FileBatchTool.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-DPI截图
+          path: docs/screenshots/dpi/
+          retention-days: 30
+
       - name: 记录体积
         shell: pwsh
         run: |

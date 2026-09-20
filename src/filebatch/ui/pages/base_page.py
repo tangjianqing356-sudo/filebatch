@@ -447,11 +447,25 @@ class BaseJobPage(QWidget):
 
     # ================= 收尾 =================
 
-    def stop_background_work(self) -> None:
+    def is_busy(self) -> bool:
+        """是否有任务正在执行（扫描不算，扫描停掉没有副作用）。"""
+        return self._worker is not None and self._worker.isRunning()
+
+    def request_stop(self) -> None:
+        """请求停止，不阻塞等待。真正的等待交给主窗口统一处理。"""
         self.file_list.stop_scan()
         if self._worker is not None and self._worker.isRunning():
             self._worker.cancel()
-            self._worker.wait(3000)
+
+    def stop_background_work(self) -> None:
+        """请求停止并等它收尾。
+
+        等待是必须的：worker 是在两个文件之间检查取消标志的，
+        如果不等当前这个文件写完就让进程退出，会留下一个残缺文件。
+        """
+        self.request_stop()
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.wait(30000)
 
     def _pick_output(self) -> None:
         if self.output_is_file():

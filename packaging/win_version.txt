@@ -10,8 +10,8 @@ VSVersionInfo(
     StringFileInfo([
       StringTable(
         '080404B0',
-        [StringStruct('CompanyName', '文件批量处理工具'),
-         StringStruct('FileDescription', '文件批量处理工具'),
+        # 没有确定的公司/作者信息，就不填，不编
+        [StringStruct('FileDescription', '文件批量处理工具'),
          StringStruct('FileVersion', '1.0.0'),
          StringStruct('InternalName', 'FileBatchTool'),
          StringStruct('OriginalFilename', 'FileBatchTool.exe'),

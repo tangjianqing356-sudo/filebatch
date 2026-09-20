@@ -105,3 +105,58 @@ tests/                 126 个测试（1368 行）
 scripts/               截图和性能测量
 docs/screenshots/      界面截图
 ```
+
+
+## 打包与发布
+
+### macOS（Intel）
+
+```bash
+./scripts/build_macos.sh
+```
+
+产物 `dist_app/文件批量处理工具_macOS_Intel.zip`（88MB 应用，zip 后 36MB）。
+
+**两个坑，脚本里已经绕开，改动时别踩回去**：
+
+1. PyInstaller 会给 .app 做 ad-hoc 签名。**打包完成后往 bundle 里塞任何文件都会破坏封印**，
+   Gatekeeper 的提示会从"无法验证开发者"升级成"应用已损坏"，用户直接被吓退。
+   使用说明要放在 .app **外面**。
+2. 改 bundle 名字之后要 `codesign --force --deep --sign -` 重新签一次。
+
+**Gatekeeper 实测**：未公证，首次双击会提示"Apple 无法检查其是否包含恶意软件"，
+右键 → 打开 → 再点一次"打开"即可，之后不再提示。要去掉这一步需要 Apple Developer ID + 公证，
+V1 先不做。
+
+### Windows（x64）
+
+必须在真 Windows 上构建，不在 Mac 上硬做。用 `.github/workflows/build.yml`
+在 `windows-latest` 上跑：测试 → DPI 检查 → 打包 → 自检 → 验收 → 各 DPI 截图 → 上传 zip。
+
+推仓库后 CI 自动跑：
+
+```bash
+gh repo create filebatch --private --source=. --push
+```
+
+### 为什么用 onedir 而不是 onefile
+
+实测（macOS Intel，各 3 次）：
+
+| | 体积 | 冷启动 |
+|---|---|---|
+| onedir | 88MB（zip 36MB） | 948–1477 ms |
+| onefile | 35MB 单文件 | **4796–5568 ms** |
+
+onefile 每次启动都要把 88MB 解压到临时目录，慢 4~5 倍；Windows 上还容易被杀毒误报。
+普通用户稳定使用比"单个 exe 好看"重要，所以用 onedir。
+
+### 自验开关
+
+打包后的程序带三个开关，用来验证**冻结后**的产物而不是开发环境：
+
+```bash
+文件批量处理工具.app/Contents/MacOS/FileBatchTool --selftest          # 依赖完整性
+文件批量处理工具.app/Contents/MacOS/FileBatchTool --acceptance        # 6 功能完整跑一遍
+文件批量处理工具.app/Contents/MacOS/FileBatchTool --measure-startup   # 冷启动与内存
+```
