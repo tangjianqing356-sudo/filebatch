@@ -54,6 +54,55 @@ def _screenshot(path: str) -> int:
     return 0 if ok else 1
 
 
+def _env_report() -> int:
+    """打印运行环境信息，CI 里用来回答"这台机器到底什么情况"。
+
+    最有价值的是长路径探测结果：它直接告诉我们这台 Windows 有没有开
+    LongPathsEnabled，以及程序看到的实际上限是多少。
+    """
+    import platform
+
+    from filebatch.core.pathlimits import probe_path_limit, reset_cache
+    from filebatch.sysinfo import peak_memory_mb
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    print("=" * 56)
+    print("运行环境")
+    print("=" * 56)
+    print(f"系统        {platform.platform()}")
+    print(f"架构        {platform.machine()}")
+    print(f"Python      {platform.python_version()}")
+    print(f"打包运行    {getattr(sys, 'frozen', False)}")
+    print(f"标准输出编码 {getattr(sys.stdout, 'encoding', '未知')}")
+
+    try:
+        import PySide6
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+        print(f"PySide6     {PySide6.__version__}，platform 插件 = {app.platformName()}")
+    except Exception as e:
+        print(f"PySide6     读取失败：{e}")
+
+    print()
+    print("长路径探测（实测，不是写死 260）")
+    reset_cache()
+    limit = probe_path_limit()
+    print(f"  结论      {limit.describe()}")
+    print(f"  max_path  {limit.max_path}（0 表示没测出总路径上限）")
+    print(f"  max_name  {limit.max_name}")
+    if limit.probe_error:
+        print(f"  探测报错  {limit.probe_error}")
+    if sys.platform == "win32":
+        状态 = "已开启" if not limit.has_limit else "未开启"
+        print(f"  推断 Windows 长路径支持：{状态}")
+
+    print()
+    print(f"峰值内存    {peak_memory_mb():.1f} MB")
+    return 0
+
+
 def main() -> int:
     # 必须在任何 print 之前：Windows 控制台默认 GBK/cp1252，打中文会直接崩
     from filebatch.console import ensure_utf8_output
@@ -65,6 +114,8 @@ def main() -> int:
         return _screenshot(sys.argv[i + 1])
     if "--measure-startup" in sys.argv:
         return _measure_startup()
+    if "--env-report" in sys.argv:
+        return _env_report()
     if "--acceptance" in sys.argv:
         from filebatch.acceptance import run
 

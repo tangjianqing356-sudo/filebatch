@@ -30,7 +30,8 @@ jobs:
       - name: 跑全部测试（含 Windows 专属的路径 / 编码 / 权限用例）
         env:
           QT_QPA_PLATFORM: offscreen
-        run: .venv/Scripts/python.exe -m pytest -v
+        # -rs 会打印每个跳过用例的原因，方便确认是合理的平台条件跳过而不是漏测
+        run: .venv/Scripts/python.exe -m pytest -v -rs
 
       - name: 检查不同 DPI 缩放下的布局（100% / 125% / 150% / 200%）
         run: .venv/Scripts/python.exe scripts/check_dpi.py
@@ -41,7 +42,52 @@ jobs:
           .venv/Scripts/python.exe scripts/make_icon.py
 
       - name: PyInstaller 打包
-        run: .venv/Scripts/python.exe -m PyInstaller packaging/app.spec --distpath dist_app --workpath build --noconfirm --clean
+        shell: pwsh
+        run: |
+          .venv/Scripts/python.exe -m PyInstaller packaging/app.spec --distpath dist_app --workpath build --noconfirm --clean 2>&1 | Tee-Object -FilePath pyinstaller.log
+          Write-Host "`n──── 打包日志里的 WARNING / ERROR ────"
+          $problems = Select-String -Path pyinstaller.log -Pattern 'WARNING|ERROR' -CaseSensitive
+          if ($problems) { $problems | ForEach-Object { Write-Host $_.Line } }
+          else { Write-Host "无（0 条）" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PyInstaller打包日志
+          path: pyinstaller.log
+          retention-days: 30
+
+      - name: 运行环境与长路径探测
+        run: dist_app/FileBatchTool/FileBatchTool.exe --env-report
+
+      - name: 验证 exe 的版本信息与图标真的写进去了
+        shell: pwsh
+        run: |
+          $exe = "dist_app/FileBatchTool/FileBatchTool.exe"
+          $vi = (Get-Item $exe).VersionInfo
+          Write-Host "──── exe 版本信息 ────"
+          Write-Host "ProductName     $($vi.ProductName)"
+          Write-Host "FileDescription $($vi.FileDescription)"
+          Write-Host "FileVersion     $($vi.FileVersion)"
+          Write-Host "ProductVersion  $($vi.ProductVersion)"
+          Write-Host "CompanyName     '$($vi.CompanyName)'  (应为空，我们不编造公司信息)"
+          if ($vi.ProductName -ne "文件批量处理工具") { throw "ProductName 没写进 exe" }
+          if ($vi.FileVersion -notlike "1.0.0*")      { throw "版本号没写进 exe" }
+
+          Write-Host "`n──── exe 图标 ────"
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path $exe))
+          if ($null -eq $icon) { throw "exe 里没有图标" }
+          Write-Host "图标尺寸 $($icon.Width)x$($icon.Height)  ✓ 已嵌入"
+
+      - name: 看看 Defender 有没有报警
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Write-Host "──── Defender 威胁记录 ────"
+          $t = Get-MpThreatDetection -ErrorAction SilentlyContinue
+          if ($t) { $t | Format-List } else { Write-Host "无威胁记录" }
+          Write-Host "`n──── exe 是否还在（没被隔离）────"
+          Test-Path dist_app/FileBatchTool/FileBatchTool.exe
 
       - name: 打包产物自检（验证冻结后依赖是否完整）
         run: dist_app/FileBatchTool/FileBatchTool.exe --selftest
@@ -65,13 +111,16 @@ jobs:
         shell: pwsh
         run: |
           $size = (Get-ChildItem dist_app/FileBatchTool -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
-          Write-Host ("打包体积 {0:N1} MB" -f $size)
+          Write-Host ("onedir 原始大小 {0:N1} MB" -f $size)
 
       - name: 打成压缩包
         shell: pwsh
         run: |
+          # 说明文件放在 zip 里、exe 旁边即可；Windows 的 exe 没有 macOS 那种签名封印问题
           Copy-Item README.md dist_app/FileBatchTool/使用说明.txt
           Compress-Archive -Path dist_app/FileBatchTool/* -DestinationPath 文件批量处理工具_Windows_x64.zip
+          $zip = (Get-Item 文件批量处理工具_Windows_x64.zip).Length / 1MB
+          Write-Host ("zip 后大小 {0:N1} MB" -f $zip)
 
       - uses: actions/upload-artifact@v4
         with:
@@ -93,6 +142,6 @@ jobs:
       - name: 跑全部测试
         env:
           QT_QPA_PLATFORM: offscreen
-        run: .venv/bin/python -m pytest -v
+        run: .venv/bin/python -m pytest -v -rs
       - name: DPI 布局检查
         run: .venv/bin/python scripts/check_dpi.py
