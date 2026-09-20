@@ -1,0 +1,84 @@
+name: 构建与验证
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ---------- Windows：必须在真 Windows 上构建，不能在 Mac 上硬做 ----------
+  windows:
+    name: Windows x64 构建与验证
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装 uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: 准备 Python 3.12 环境
+        run: |
+          uv venv --python 3.12
+          uv pip install -r requirements-dev.txt --python .venv/Scripts/python.exe
+
+      - name: 跑全部测试（含 Windows 专属的路径 / 编码 / 权限用例）
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: .venv/Scripts/python.exe -m pytest -v
+
+      - name: 检查不同 DPI 缩放下的布局（100% / 125% / 150% / 200%）
+        run: .venv/Scripts/python.exe scripts/check_dpi.py
+
+      - name: 生成应用图标
+        run: |
+          $env:PYTHONPATH="src"
+          .venv/Scripts/python.exe scripts/make_icon.py
+
+      - name: PyInstaller 打包
+        run: .venv/Scripts/python.exe -m PyInstaller packaging/app.spec --distpath dist_app --workpath build --noconfirm --clean
+
+      - name: 打包产物自检（验证冻结后依赖是否完整）
+        run: dist_app/FileBatchTool/FileBatchTool.exe --selftest
+
+      - name: 打包产物完整验收（6 个功能各跑一遍真实流程）
+        run: dist_app/FileBatchTool/FileBatchTool.exe --acceptance
+
+      - name: 记录冷启动与内存
+        run: dist_app/FileBatchTool/FileBatchTool.exe --measure-startup
+
+      - name: 记录体积
+        shell: pwsh
+        run: |
+          $size = (Get-ChildItem dist_app/FileBatchTool -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+          Write-Host ("打包体积 {0:N1} MB" -f $size)
+
+      - name: 打成压缩包
+        shell: pwsh
+        run: |
+          Copy-Item README.md dist_app/FileBatchTool/使用说明.txt
+          Compress-Archive -Path dist_app/FileBatchTool/* -DestinationPath 文件批量处理工具_Windows_x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 文件批量处理工具-Windows-x64
+          path: 文件批量处理工具_Windows_x64.zip
+          retention-days: 30
+
+  # ---------- macOS：这里只做回归，正式 .app 在本机产出 ----------
+  macos:
+    name: macOS 测试
+    runs-on: macos-13          # Intel，和开发机一致
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: 准备环境
+        run: |
+          uv venv --python 3.12
+          uv pip install -r requirements-dev.txt --python .venv/bin/python
+      - name: 跑全部测试
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: .venv/bin/python -m pytest -v
+      - name: DPI 布局检查
+        run: .venv/bin/python scripts/check_dpi.py

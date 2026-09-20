@@ -1,0 +1,17 @@
+[project]
+name = "filebatch"
+version = "0.1.0"
+description = "文件批量处理工具 - 重命名、编号、分类、图片、表格、PDF、文本替换"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"

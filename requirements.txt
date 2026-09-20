@@ -1,0 +1,10 @@
+# 界面：Qt 官方绑定，LGPL，拖拽和表格预览都是原生能力。
+# 用 Essentials 而不是完整版 PySide6：完整版会带上 QtWebEngine 等一大堆用不到的模块
+# （下载超过 1GB，打包出来 400MB+）。Essentials 含 QtCore/QtGui/QtWidgets，本工具够用。
+PySide6-Essentials==6.11.2
+# 图片处理
+pillow==12.3.0
+# Excel 读写（CSV 用标准库 csv，不引入 pandas：省掉 numpy 60MB 和打包麻烦）
+openpyxl==3.1.5
+# PDF 拆分合并，纯 Python 无 C 依赖，打包最干净
+pypdf==6.19.0
