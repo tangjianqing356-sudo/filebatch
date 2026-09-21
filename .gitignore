@@ -8,3 +8,13 @@ dist_app/
 .pytest_cache/
 .DS_Store
 packaging/icon/app.iconset/
+
+# 本地下载的工具，不属于产品代码（曾经误提交过 56MB 的 gh CLI）
+gh.zip
+gh_*_macOS_*/
+gh_*_windows_*/
+gh_*_linux_*/
+
+# 各轮验证的临时产物
+dist_ci/
+build_ci/
