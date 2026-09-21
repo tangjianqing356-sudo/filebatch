@@ -11,7 +11,10 @@ IGNORED_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini", ".localized"}
 PROGRESS_EVERY = 200
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif"}
-TABLE_SUFFIXES = {".csv", ".xlsx", ".xlsm"}
+# 和 core/excel/workbook.SUPPORTED_SUFFIXES 保持一致：
+# 工具箱里六个标签页收的文件类型必须一样，不能"合并不认 .tsv、去重却认"。
+# tests/excel/test_workbook.py 里有一条测试盯着这两个集合别走散。
+TABLE_SUFFIXES = {".csv", ".tsv", ".xlsx", ".xlsm"}
 PDF_SUFFIXES = {".pdf"}
 TEXT_SUFFIXES = {".txt", ".md", ".csv", ".log", ".json", ".xml", ".html", ".css", ".js", ".py"}
 

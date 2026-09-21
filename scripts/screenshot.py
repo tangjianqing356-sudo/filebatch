@@ -45,11 +45,31 @@ def 刷新(times: int = 6) -> None:
         app.processEvents()
 
 
+已生成: list[str] = []
+
+
 def 截图(widget, name: str) -> None:
     刷新()
     path = OUT_DIR / f"{name}.png"
     widget.grab().save(str(path))
+    已生成.append(name)
     print(f"  {path.relative_to(ROOT)}", flush=True)
+
+
+def 查过期截图() -> int:
+    """目录里有、这次却没生成的，就是界面改过之后留下的旧图。
+
+    旧截图比没有截图更坑：以后维护的人会照着一张早就不存在的界面找控件。
+    """
+    实际 = {p.stem for p in OUT_DIR.glob("*.png")}
+    过期 = sorted(实际 - set(已生成))
+    if not 过期:
+        return 0
+    print("\n⚠ 以下截图这次没有生成，多半是界面改过留下的旧图：", flush=True)
+    for n in 过期:
+        print(f"    docs/screenshots/{n}.png", flush=True)
+    print("  确认不需要就删掉，还需要就在本脚本里补上对应的截图步骤。", flush=True)
+    return len(过期)
 
 
 def 跑完(page) -> None:
@@ -105,6 +125,42 @@ def 造表格(base: Path) -> Path:
     return d
 
 
+def 造Excel样例(base: Path) -> Path:
+    """Excel 工具箱用的样例：带重复、带空行、带可拆分的列。
+
+    必须是 .xlsx —— 格式统一那一页不收 CSV。
+    """
+    from openpyxl import Workbook
+
+    d = base / "Excel样例"
+    d.mkdir(parents=True, exist_ok=True)
+
+    def 写(name: str, rows: list[list]) -> None:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        for r in rows:
+            ws.append(r)
+        wb.save(d / name)
+
+    写("3月员工名单.xlsx", [
+        ["工号", "姓名", "部门", "金额"],
+        ["A001", "张三", "研发部", 12000],
+        ["A002", "李四", "销售部", 9000],
+        ["A001", "张三", "研发部", 12000],      # 完全重复
+        ["A003", "  王五  ", "研发部", 11000],  # 首尾有空格
+        ["", "", "", ""],                       # 空行
+        ["A004", "赵六", "行政部", 8000],
+    ])
+    写("4月员工名单.xlsx", [
+        ["工号", "姓名", "部门", "金额"],
+        ["A001", "张三", "研发部", 13000],      # 金额变了
+        ["A002", "李四", "销售部", 9000],        # 没变
+        ["A005", "孙七", "销售部", 9500],        # 新人
+    ])
+    return d
+
+
 def 造PDF(base: Path) -> Path:
     from pypdf import PdfWriter
 
@@ -117,6 +173,20 @@ def 造PDF(base: Path) -> Path:
         with open(d / name, "wb") as f:
             w.write(f)
     return d
+
+
+def 等读完表头(page, 超时秒: float = 20) -> None:
+    """选列的页面表头是后台读的，不等它截出来的图里下拉框是空的。"""
+    import time
+
+    worker = getattr(page, "_inspect_worker", None)
+    if worker is None:
+        return
+    t0 = time.time()
+    while worker.isRunning() and time.time() - t0 < 超时秒:
+        刷新()
+        worker.wait(20)
+    刷新()
 
 
 def main() -> int:
@@ -179,14 +249,41 @@ def main() -> int:
     p.generate_preview()
     截图(win, "08_图片批处理")
 
-    # ---------- 09 表格 ----------
-    win.nav.setCurrentRow(3)
-    p = win.page_at(3)
-    p.file_list.add_paths_sync([造表格(TMP)])
-    p._output_path = TMP / "合并结果.xlsx"
-    p.lbl_output.setFullText(str(p._output_path))
-    p.generate_preview()
-    截图(win, "09_Excel_CSV合并")
+    # ---------- 09 Excel 工具箱：六个标签页各来一张 ----------
+    from filebatch.ui.main_window import EXCEL_TOOLBOX_INDEX
+
+    win.nav.setCurrentRow(EXCEL_TOOLBOX_INDEX)
+    toolbox = win.page_at(EXCEL_TOOLBOX_INDEX)
+    表格源 = 造表格(TMP)
+    Excel源 = 造Excel样例(TMP)
+
+    def 截工具箱(标签: int, 文件, 输出, 名称: str, 设参数=None) -> None:
+        toolbox.tabs.setCurrentIndex(标签)
+        p = toolbox.sub_page(标签)
+        p.file_list.add_paths_sync(文件)
+        p._output_path = 输出
+        p.lbl_output.setFullText(str(输出))
+        等读完表头(p)
+        if 设参数 is not None:
+            设参数(p)
+            等读完表头(p)
+        p.generate_preview()
+        截图(win, 名称)
+
+    截工具箱(0, [表格源], TMP / "合并结果.xlsx", "09a_Excel工具箱_合并")
+
+    截工具箱(1, [Excel源], TMP / "去重结果", "09b_Excel工具箱_去重",
+            lambda p: p.list_keys.set_checked(["工号", "姓名"]))
+
+    截工具箱(2, [Excel源], TMP / "对比结果.xlsx", "09c_Excel工具箱_两表对比",
+            lambda p: p.list_keys.set_checked(["工号"]))
+
+    截工具箱(3, [Excel源], TMP / "清洗结果", "09d_Excel工具箱_数据清洗")
+
+    截工具箱(4, [Excel源], TMP / "拆表结果", "09e_Excel工具箱_批量拆表",
+            lambda p: p.cb_column.setCurrentText("部门"))
+
+    截工具箱(5, [Excel源], TMP / "格式化结果", "09f_Excel工具箱_格式统一")
 
     # ---------- 10 PDF ----------
     win.nav.setCurrentRow(4)
@@ -221,8 +318,9 @@ def main() -> int:
     截图(box, "12_危险操作二次确认")
     box.close()
 
+    过期数 = 查过期截图()
     print(f"\n样例目录（用完可删）：{TMP}", flush=True)
-    return 0
+    return 1 if 过期数 else 0
 
 
 if __name__ == "__main__":

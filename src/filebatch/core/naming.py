@@ -114,8 +114,23 @@ class NameRule:
         return ext if ext.startswith(".") else f".{ext}"
 
 
+# Windows 上这些名字是设备名，做文件名会直接失败（带不带扩展名都一样）。
+# 平时碰不到，但"按某一列拆表"时列值是用户数据，出现 CON、NUL、PRN 完全可能。
+_WINDOWS_保留名 = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
 def sanitize_filename(name: str, replacement: str = "_") -> str:
-    """把文件名里不合法的字符换掉，避免生成一个存不下去的名字。"""
+    """把文件名里不合法的字符换掉，避免生成一个存不下去的名字。
+
+    统一按 Windows 的规则来（最严的那一套），这样同一份数据在 Mac 上
+    和在 Windows 上拆出来的文件名是一样的，不会换台机器就对不上。
+    """
     cleaned = re.sub(r'[/\\:*?"<>|\x00-\x1f]', replacement, name)
     cleaned = cleaned.strip().rstrip(".")
+    if cleaned.upper() in _WINDOWS_保留名:
+        cleaned = f"{cleaned}_"
     return cleaned or "未命名"

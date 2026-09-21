@@ -5,8 +5,6 @@
 """
 from __future__ import annotations
 
-import errno
-
 
 def humanize(exc: BaseException) -> str:
     """异常 -> 一句人话。"""
@@ -25,18 +23,10 @@ def humanize(exc: BaseException) -> str:
     if isinstance(exc, MemoryError):
         return "内存不足，文件可能太大了。试试分批处理。"
     if isinstance(exc, OSError):
-        # 必须用 errno 常量而不是写死数字：ENAMETOOLONG 在 Linux 是 36、macOS 是 63，
-        # 写死一个值会让提示在另一个平台永远不触发。
-        code = getattr(exc, "errno", None)
-        if code == errno.ENOSPC:
-            return "磁盘空间不足，请清理后再试。"
-        if code == errno.ENAMETOOLONG:
-            return "文件名或路径太长了，系统存不下。请缩短前缀，或把输出文件夹换到更浅的位置。"
-        if code == errno.EROFS:
-            return "这个位置是只读的，无法写入。请换一个输出文件夹。"
-        if code == errno.EACCES:
-            return "没有权限写入这个位置，请换一个输出文件夹，或检查文件是否只读。"
-        return "系统在读写文件时出错了。请检查磁盘空间，以及文件是否正被其他程序占用。"
+        # 和 core 各 job 用同一份说法，避免界面和日志两套措辞
+        from ..core.oserrors import describe
+
+        return describe(exc)
     return "处理时发生了意外问题。详细原因已记录在下方日志里。"
 
 

@@ -16,23 +16,43 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .excel_toolbox.toolbox_page import SUB_FEATURES, ExcelToolboxPage
 from .messages import TEXT
+from .pages.base_page import BaseJobPage
 from .pages.classify_page import ClassifyPage
 from .pages.image_page import ImagePage
 from .pages.pdf_page import PdfPage
 from .pages.rename_page import RenamePage
-from .pages.table_page import TablePage
 from .pages.text_page import TextPage
 
 # (显示名, 页面类)
+# 表格相关的功能都收进「Excel 工具箱」这一个入口，左边导航才不会越排越长。
 FEATURES = [
     ("批量重命名 / 编号", RenamePage),
     ("文件分类整理", ClassifyPage),
     ("图片批处理", ImagePage),
-    ("Excel / CSV 合并", TablePage),
+    ("Excel 工具箱", ExcelToolboxPage),
     ("PDF 拆分 / 合并", PdfPage),
     ("文本查找替换", TextPage),
 ]
+
+# 左边导航里第几项是 Excel 工具箱（验收脚本和测试要用）
+EXCEL_TOOLBOX_INDEX = [cls for _, cls in FEATURES].index(ExcelToolboxPage)
+
+
+def all_job_page_classes() -> list[type[BaseJobPage]]:
+    """所有真正干活的功能页，工具箱里的子页面也算。
+
+    公共安全规则的参数化测试靠它取页面清单：新加一个 Excel 子功能时
+    会自动被那些规则覆盖，不用记得去改测试。
+    """
+    页面: list[type[BaseJobPage]] = []
+    for _, cls in FEATURES:
+        if cls is ExcelToolboxPage:
+            页面.extend(子类 for _, 子类 in SUB_FEATURES)
+        else:
+            页面.append(cls)
+    return 页面
 
 
 class MainWindow(QMainWindow):
@@ -202,8 +222,7 @@ class MainWindow(QMainWindow):
                     return True
                 QApplication.processEvents()
                 for page in self._busy_pages():
-                    worker = getattr(page, "_worker", None)
-                    if worker is not None:
+                    for worker in page.active_workers():
                         worker.wait(QDeadlineTimer(50))
             return not self._busy_pages()
         finally:

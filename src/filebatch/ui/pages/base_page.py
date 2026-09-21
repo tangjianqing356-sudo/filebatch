@@ -96,6 +96,13 @@ class BaseJobPage(QWidget):
     def make_executor(self, actions: list[PlannedAction]) -> Callable[..., JobReport]:
         """返回一个接受 on_progress / should_cancel 的可调用对象。"""
 
+    def annotate_plan(self, actions: list[PlannedAction]) -> None:
+        """计划算完、还没渲染到预览表之前的钩子。
+
+        子类可以在这里往 note 里补充提示，但**不要**在这里做文件 I/O——
+        这个方法跑在界面线程上。
+        """
+
     def register_invalidators(self) -> None:
         """把自己的参数控件接到 _invalidate_preview 上。"""
 
@@ -330,6 +337,9 @@ class BaseJobPage(QWidget):
             show_error(self, "生成预览失败", humanize(e), technical_detail(e))
             return False
 
+        # 子类可以在这里往计划项上补自己的提示（例如表头不一致）
+        self.annotate_plan(self._actions)
+
         # 路径过长在 Windows 上很常见。实测当前输出位置的上限，
         # 在预览阶段就把会失败的项拦下来，而不是执行到一半甩系统错误。
         过长 = self._annotate_path_limits(self._actions)
@@ -450,6 +460,16 @@ class BaseJobPage(QWidget):
     def is_busy(self) -> bool:
         """是否有任务正在执行（扫描不算，扫描停掉没有副作用）。"""
         return self._worker is not None and self._worker.isRunning()
+
+    def active_workers(self) -> list:
+        """正在跑的后台线程。主窗口等待安全退出时按这个列表逐个 wait。
+
+        做成列表而不是直接暴露 `_worker`，是因为 Excel 工具箱那种容器页面
+        底下挂着好几个子页面，可能同时有多个线程在跑。
+        """
+        if self._worker is not None and self._worker.isRunning():
+            return [self._worker]
+        return []
 
     def request_stop(self) -> None:
         """请求停止，不阻塞等待。真正的等待交给主窗口统一处理。"""

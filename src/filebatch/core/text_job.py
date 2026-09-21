@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .oserrors import describe as 说明错误
 from .result import JobReport, PlannedAction
 from .safety import unique_path
 
@@ -183,7 +184,7 @@ def execute(
         except UnicodeEncodeError as e:
             report.add_fail(act.source, f"替换后的内容无法用原编码({encoding})保存：{e}")
         except OSError as e:
-            report.add_fail(act.source, f"系统错误：{e}")
+            report.add_fail(act.source, 说明错误(e))
         except Exception as e:
             report.add_fail(act.source, f"未知错误：{type(e).__name__} {e}")
 

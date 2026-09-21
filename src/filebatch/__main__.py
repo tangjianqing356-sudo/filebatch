@@ -26,10 +26,18 @@ def _measure_startup() -> int:
 
     print(f"冷启动 {用时:.0f} ms | 空闲内存 {peak_memory_mb():.1f} MB")
 
+    子页数 = 0
     for i in range(len(win.pages)):
-        win.page_at(i)
+        page = win.page_at(i)
+        # Excel 工具箱的子页面也是懒加载的，要报最坏情况就得全建出来
+        建子页 = getattr(page, "sub_page", None)
+        if 建子页 is not None:
+            for j in range(page.tabs.count()):
+                建子页(j)
+                子页数 += 1
         app.processEvents()
-    print(f"六页全开后内存 {peak_memory_mb():.1f} MB")
+    print(f"{len(win.pages)} 个功能页 + {子页数} 个 Excel 子页全开后内存 "
+          f"{peak_memory_mb():.1f} MB")
     return 0
 
 
@@ -120,6 +128,12 @@ def main() -> int:
         from filebatch.acceptance import run
 
         return run("--open-output" in sys.argv)
+    if "--platform-check" in sys.argv:
+        # 平台边界验收：中文/空格/长路径、文件占用、权限、盘符、.xlsm 往返
+        from filebatch.platformcheck import run
+
+        文件 = sys.argv[sys.argv.index("--xlsm") + 1] if "--xlsm" in sys.argv else None
+        return run(文件)
     if "--selftest" in sys.argv:
         # 自检必须无头运行，打包后的程序在 CI 或终端里也能跑
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

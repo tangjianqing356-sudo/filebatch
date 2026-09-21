@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from .naming import NameRule, sanitize_filename
+from .oserrors import describe as 说明错误
 from .result import JobReport, PlannedAction
 from .safety import unique_path
 
@@ -244,7 +245,7 @@ def execute(
         except FileNotFoundError:
             report.add_fail(act.source, "文件已不存在，可能在处理过程中被移动或删除")
         except OSError as e:
-            report.add_fail(act.source, f"图片读写失败：{e}")
+            report.add_fail(act.source, f"图片读写失败：{说明错误(e)}")
         except Exception as e:
             report.add_fail(act.source, f"未知错误：{type(e).__name__} {e}")
 

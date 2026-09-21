@@ -86,10 +86,17 @@ def _界面构建() -> str:
         app.processEvents()
     页数 = len(win.pages)
     首页 = win.stack.currentWidget() is win.pages[0]
+    子页数 = 0
     for i in range(页数):
-        win.page_at(i)
+        page = win.page_at(i)
+        # Excel 工具箱里的子页面是懒加载的，冻结环境里也得挨个建一遍才算验过
+        建子页 = getattr(page, "sub_page", None)
+        if 建子页 is not None:
+            for j in range(page.tabs.count()):
+                建子页(j)
+                子页数 += 1
     win.close()
-    return f"{页数} 个功能页全部可创建，首页正确显示={首页}"
+    return f"{页数} 个功能页 + {子页数} 个 Excel 子页全部可创建，首页正确显示={首页}"
 
 
 def _中文路径() -> str:

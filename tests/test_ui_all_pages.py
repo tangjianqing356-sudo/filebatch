@@ -1,4 +1,4 @@
-"""六个功能页的公共安全规则 + 各自的端到端流程。
+"""所有功能页的公共安全规则 + 各自的端到端流程。
 
 公共规则做成参数化：新加页面时会自动被这些规则覆盖，不会漏测。
 """
@@ -24,9 +24,10 @@ def 静音弹窗(monkeypatch):
 
 
 def 所有页面类():
-    from filebatch.ui.main_window import FEATURES
+    """含 Excel 工具箱里的六个子页面——它们同样要守这些公共规则。"""
+    from filebatch.ui.main_window import all_job_page_classes
 
-    return [cls for _, cls in FEATURES]
+    return all_job_page_classes()
 
 
 def 页面名(cls):

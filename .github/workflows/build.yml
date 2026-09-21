@@ -92,8 +92,13 @@ jobs:
       - name: 打包产物自检（验证冻结后依赖是否完整）
         run: dist_app/FileBatchTool/FileBatchTool.exe --selftest
 
-      - name: 打包产物完整验收（6 个功能各跑一遍真实流程）
+      - name: 打包产物完整验收（11 个功能各跑一遍真实流程）
         run: dist_app/FileBatchTool/FileBatchTool.exe --acceptance
+
+      - name: 平台边界验收（中文/空格/长路径、文件占用、权限、盘符、.xlsm）
+        # 这一项在 Windows 上才有真正的结论：文件锁、路径上限、权限模型
+        # 和 macOS 完全不是一回事
+        run: dist_app/FileBatchTool/FileBatchTool.exe --platform-check
 
       - name: 记录冷启动与内存
         run: dist_app/FileBatchTool/FileBatchTool.exe --measure-startup
@@ -145,3 +150,8 @@ jobs:
         run: .venv/bin/python -m pytest -v -rs
       - name: DPI 布局检查
         run: .venv/bin/python scripts/check_dpi.py
+      - name: 平台边界验收（macOS 侧，作为对照）
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: .venv/bin/python -m filebatch --platform-check
