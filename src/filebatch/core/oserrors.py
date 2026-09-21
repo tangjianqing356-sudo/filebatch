@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import errno
+import sys
 
 # errno 必须用常量不能写死数字：ENAMETOOLONG 在 Linux 是 36、macOS 是 63，
 # 写死一个值会让提示在另一个平台永远不触发。
@@ -26,9 +27,43 @@ _按错误码 = {
 }
 
 
+# Windows 的错误码和 POSIX errno 对不上：同一件事 Windows 会给
+# winerror 206（文件名超长）而 errno 只是个笼统的 22。
+# Windows CI 上"超长文件名"那条用例就是因为只看 errno 而掉进了兜底文案。
+_按WINDOWS错误码 = {
+    2: "找不到这个文件，它可能已经被移动、重命名或删除了。",
+    3: "这个位置不存在。如果是移动硬盘或网络盘，请确认它还连着。",
+    5: "没有权限写入这个位置，请换一个输出文件夹，或检查文件是否只读。",
+    15: "找不到这个盘符，移动硬盘或网络盘可能已经断开。",
+    32: "这个文件正被其他程序占用（多半是还开在 Excel 里），请关掉它再试。",
+    33: "文件的一部分被其他程序锁住了，请关掉正在用它的程序再试。",
+    112: "磁盘空间不足，请清理后再试。",
+    123: "文件名里有系统不允许的字符，或者名字太长了。请换个名字。",
+    206: "文件名或路径太长了，系统存不下。请缩短前缀，或把输出文件夹换到更浅的位置。",
+}
+
+# Windows 上文件名太长 / 含非法字符，errno 经常只给一个笼统的 EINVAL。
+# POSIX 上 EINVAL 的含义不一样，所以这条只在 Windows 生效。
+_WINDOWS的EINVAL = (
+    "文件名或路径不被系统接受，多半是太长了，也可能含有不允许的字符。"
+    "请缩短前缀，或把输出文件夹换到更浅的位置。"
+)
+
+
 def describe(exc: OSError) -> str:
     """一句中文说明。绝不把 errno / WinError 原文甩给用户。"""
-    说法 = _按错误码.get(getattr(exc, "errno", None))
+    win = getattr(exc, "winerror", None)
+    if win is not None:
+        说法 = _按WINDOWS错误码.get(win)
+        if 说法:
+            return 说法
+
+    code = getattr(exc, "errno", None)
+    说法 = _按错误码.get(code)
     if 说法:
         return 说法
+
+    if sys.platform == "win32" and code == errno.EINVAL:
+        return _WINDOWS的EINVAL
+
     return "系统在读写文件时出错了。请检查磁盘空间、输出位置是否还在，以及文件是否正被其他程序占用。"

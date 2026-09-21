@@ -167,8 +167,13 @@ def test_超长文件名给中文提示而不是系统异常(tmp_path):
 
     if report.failed:
         msg = report.items[0].message
-        assert "Traceback" not in msg and "Errno" not in msg
-        assert any(k in msg for k in ("太长", "过长", "系统错误", "权限"))
+        assert "Traceback" not in msg and "Errno" not in msg, msg
+        assert "WinError" not in msg, msg
+        # 失败时把真实消息带出来：Windows 的错误码和 POSIX 对不上，
+        # 看不到原文就只能靠猜
+        assert any(k in msg for k in ("太长", "过长", "不被系统接受", "权限", "不允许")), (
+            f"超长文件名应该给出可操作的中文提示，实际是：{msg}"
+        )
 
 
 def test_路径长度上限在当前平台能被测出来():

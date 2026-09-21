@@ -106,3 +106,62 @@ def test_Excel执行循环也不拼原始OSError():
     源码 = inspect.getsource(runner)
     assert '系统错误：{e}' not in 源码
     assert "说明错误" in 源码
+
+
+# ---------------- Windows 错误码（CI 上暴露出来的） ----------------
+#
+# Windows 的 winerror 和 POSIX errno 对不上：文件名超长 Windows 给 winerror 206，
+# 而 errno 只是个笼统的 22。只看 errno 会掉进兜底文案，
+# 用户看到的就变成"系统在读写文件时出错了"这种没法操作的话。
+
+def 造win(winerror: int, errno_: int = 22) -> OSError:
+    e = OSError(errno_, "windows boom", "C:/某个路径")
+    e.winerror = winerror
+    return e
+
+
+@pytest.mark.parametrize("win, 关键词", [
+    (2, "找不到"),
+    (3, "不存在"),
+    (5, "权限"),
+    (15, "盘符"),
+    (32, "占用"),
+    (33, "锁住"),
+    (112, "磁盘空间"),
+    (123, "不允许"),
+    (206, "太长"),
+])
+def test_Windows错误码都有人话(win, 关键词):
+    说法 = describe(造win(win))
+    assert 关键词 in 说法, 说法
+    assert "WinError" not in 说法 and str(win) not in 说法
+
+
+def test_winerror优先于errno():
+    """同一个异常两个码都有时，Windows 的那个更具体。"""
+    e = 造win(206, errno_=errno.EINVAL)
+    assert "太长" in describe(e)
+
+
+def test_没见过的winerror回落到errno():
+    e = 造win(99999, errno_=errno.ENOSPC)
+    assert "磁盘空间" in describe(e)
+
+
+def test_Windows上的EINVAL不再掉进兜底文案(monkeypatch):
+    """CI 上"超长文件名"那条就是栽在这里：Windows 只给了 EINVAL。"""
+    import filebatch.core.oserrors as mod
+
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    说法 = mod.describe(OSError(errno.EINVAL, "Invalid argument"))
+    assert "太长" in 说法, 说法
+    assert "系统在读写文件时出错了" not in 说法
+
+
+def test_非Windows的EINVAL仍然走兜底(monkeypatch):
+    """EINVAL 在 POSIX 上含义不同，不能套用 Windows 的说法。"""
+    import filebatch.core.oserrors as mod
+
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    说法 = mod.describe(OSError(errno.EINVAL, "Invalid argument"))
+    assert "太长" not in 说法
