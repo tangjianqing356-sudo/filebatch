@@ -154,7 +154,14 @@ jobs:
   # ---------- macOS：这里只做回归，正式 .app 在本机产出 ----------
   macos:
     name: macOS 测试
-    runs-on: macos-13          # Intel，和开发机一致
+    # 原来写的 macos-13（Intel，和开发机一致），但 GitHub 已经把 Intel 版
+    # 托管 runner 下线了：实测同一个 run 里 Windows 几秒就被调度，
+    # macOS job 排了近 4 小时一次都没启动过。
+    #
+    # 这个 job 只跑回归（pytest / DPI / 平台边界），不产出发布包——
+    # 正式 .app 仍然在本机 Intel 上打，所以架构不一致不影响交付物，
+    # 反而多了一层 arm64 的覆盖。
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
