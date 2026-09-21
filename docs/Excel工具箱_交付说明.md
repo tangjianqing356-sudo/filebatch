@@ -1,7 +1,7 @@
 # Excel 工具箱 —— 交付说明
 
-> 本轮改动尚未推远程、未发版本。
-> 下一步是 Windows 真机 / CI 验证，本文最后一节列了要重点看的点。
+> 已推远程、CI 双平台全绿；**未发版本、未打 tag**。
+> 最后一道 Gate 是 Windows 真机验收，见 `docs/Windows验收清单.md`。
 
 ## 一、做成了什么
 
@@ -493,3 +493,101 @@ Windows 上会是 `[WinError 3] 系统找不到指定的路径。`。
 在真机上拿一个真的带宏文件跑一次就有结论了。
 代码里 `.xlsm` 走 `keep_vba=True`、输出扩展名跟随源文件，
 往返测试已通过，但**宏本身是否保住只能靠真文件验证**。
+
+## 十二、CI 结果与历史瘦身
+
+### A. 功能 CI
+
+仓库：https://github.com/tangjianqing356-sudo/filebatch（private，无 Release、无 tag）
+
+最终 commit **`0409a96`**，run `35629812984`，两个平台全绿。
+
+| | Windows x64 | macOS |
+|---|---|---|
+| 结论 | ✅ success | ✅ success |
+| pytest | 499 passed, 1 skipped | 498 passed, 2 skipped |
+| skip 原因 | 只读位行为不同（Windows 专属） | 盘符/反斜杠、文件锁（均 Windows 专属） |
+| selftest | 7 项，失败 0 | 不跑冻结产物 |
+| acceptance | 11 个功能，失败 0 | 同上 |
+| platform-check | 11 项，失败 0 | 11 项，失败 0 |
+| frozen build | ✅ PyInstaller 0 条 WARNING/ERROR | 本机产出 |
+| DPI 四档 | ✅ 0 问题（源码 + exe） | ✅ 0 问题 |
+
+Windows 打包产物：`文件批量处理工具_Windows_x64.zip`，
+onedir 104.9 MB / zip 44.6 MB，冷启动 251 ms，全功能页打开后 74.5 MB。
+exe 版本信息、图标已嵌入，CompanyName 为空（不编造），Defender 无威胁记录。
+
+Artifact 三个全部上传成功：
+
+```
+文件批量处理工具-Windows-x64   46,588,888 字节
+Windows-DPI截图                  168,778 字节
+PyInstaller打包日志                1,837 字节
+```
+
+Windows 上的长路径探测结论：**当前环境支持较长路径**（试到 400 字符仍可创建），
+`max_path=0`（没测出总路径上限），`max_name=255`。
+
+### CI 过程中修掉的真实问题
+
+CI 第一次跑就抓到几个 macOS 上根本发现不了的问题，全部只修问题、不扩需求：
+
+| # | 问题 | 根因 |
+|---|---|---|
+| 1 | `peak_memory_mb()` 在 Windows 返回 0 | `GetCurrentProcess` 没声明 restype，64 位伪句柄被截断；`GetProcessMemoryInfo` 没声明 argtypes |
+| 2 | 超长文件名提示掉进兜底文案 | 映射表只看 errno，而 Windows 给的是 winerror 206，errno 只有笼统的 22 |
+| 3 | **`--acceptance` 一个字都不打印，退出码却是 0** | 只有它没设 `QT_QPA_PLATFORM=offscreen`，打包成窗口程序后用真实 windows 插件跑，print 全丢了——**那一步"通过"了却什么都没验证** |
+| 4 | 输出位置不存在时矛头指向源文件 | Windows 抛 FileNotFoundError，被各 job 拦下说成"文件已不存在" |
+| 5 | 文件占用检查在 Windows 等于没测 | Python 的 `open()` 默认带 FILE_SHARE_READ，锁不住 |
+| 6 | macOS job 排了近 4 小时没启动 | `macos-13`（Intel）托管 runner 已被 GitHub 下线 |
+
+第 3 条促成一条 CI 加固：**selftest / acceptance / platform-check 三步不再只看退出码，
+还要核对输出里的结论行**，打印为空直接 throw。macOS 侧同样加了这个校验。
+
+### B. 历史瘦身
+
+| | 改写前 | 改写后 |
+|---|---|---|
+| `.git` 体积 | 100 MB | **6.2 MB** |
+| HEAD | `4c02099` | **`0409a96`** |
+| commit 数 | 9 | 9（一条没少） |
+| >1MB 的历史文件 | 20 个 | 0 个 |
+
+删掉的历史路径（`git filter-repo v2.47.0 --invert-paths`）：
+
+```
+gh.zip                      15.2 MB   误提交的 GitHub CLI
+gh_2.101.0_macOS_amd64/     41.1 MB   同上，macOS amd64 构建
+dist_ci/                    ~75 MB    PyInstaller 产物（.app + onedir）
+build_ci/                   ~8 MB     PyInstaller 中间产物
+```
+
+`.gitignore` 新增：
+
+```
+gh.zip
+gh_*_macOS_*/
+gh_*_windows_*/
+gh_*_linux_*/
+dist_ci/
+build_ci/
+```
+
+按要求**没有**创建保留旧历史的远程 backup 分支或 tag——那样旧 blob 会被继续引用。
+本地备份留在 scratchpad 里的 bundle，未推远程。
+
+force push 后确认：默认分支 `main` → `0409a96`，private，**0 个 tag、1 个分支**。
+重新克隆一份实测 `.git` 只有 6.2 MB，四个垃圾路径在历史中出现 0 次。
+
+> GitHub API 报的 `size` 还是 82709 KB——它的 GC 是异步的，
+> 旧 blob 已经没有任何 ref 指向，数字会自己回落。新克隆的体积才是真实结果。
+
+历史改写后**重新触发了一次完整 CI**（就是上面的 run `35629812984`），
+两个平台仍然全绿——最终验收依据是清理后的 `0409a96`，不是旧 SHA。
+
+### 仍然不具备发版条件
+
+**Windows 真机验收是最后一道 Gate，CI 全绿 ≠ 真机验收完成。**
+按 `docs/Windows验收清单.md` 执行，其中**带真实 VBA 的 `.xlsm` 必须真机真文件确认**：
+代码走 `keep_vba=True`、扩展名跟随源文件、往返测试通过，
+但这些**都不等于宏一定保留**——造不出合法的 `vbaProject.bin`，只能用真文件验。
