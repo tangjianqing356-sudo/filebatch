@@ -272,36 +272,65 @@ def _xlsm往返() -> str:
     return "扩展名保持 .xlsm，数字类型未变"
 
 
+VBA_流 = "xl/vbaProject.bin"
+
+
+def _取宏(path: Path) -> bytes | None:
+    """把工作簿里的 VBA 工程原样读出来。没有宏就返回 None。
+
+    **不要**用 openpyxl 的 `wb.vba_archive is not None` 来判断有没有宏——
+    `keep_vba=True` 只是把源 zip 留着，哪怕一个宏都没有它也不是 None。
+    真机验收那条曾经因此对一个完全没有宏的 .xlsm 报"宏保留正常"，
+    等于给了假的信心。只有 zip 里真有 xl/vbaProject.bin 才算有宏。
+    """
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(path) as z:
+            if VBA_流 not in z.namelist():
+                return None
+            return z.read(VBA_流)
+    except (OSError, zipfile.BadZipFile):
+        return None
+
+
 def _真实宏文件(路径: str) -> str:
     """用户自己提供一个带宏的 .xlsm，验证宏是不是真的还在。
 
     没法凭空造一个合法的 vbaProject.bin，所以这一条要么靠真文件，要么跳过。
+    这里只能证明"VBA 工程的字节被原样带过去了"；
+    **宏在 Excel 里还能不能跑，仍然要人工打开确认**。
     """
-    from openpyxl import load_workbook
-
     from filebatch.core.excel import format_job
     from filebatch.core.excel.format_job import FormatOptions
 
     源 = Path(路径).expanduser()
     assert 源.exists(), f"找不到文件：{源}"
-    assert 源.suffix.lower() == ".xlsm", "请提供 .xlsm 文件"
+    assert 源.suffix.lower() == ".xlsm", f"请提供 .xlsm 文件，当前是 {源.suffix}"
 
-    原 = load_workbook(源, keep_vba=True)
-    有宏 = getattr(原, "vba_archive", None) is not None
-    原.close()
-    assert 有宏, "这个 .xlsm 里没有宏，换一个带宏的文件"
+    原宏 = _取宏(源)
+    assert 原宏 is not None, (
+        f"「{源.name}」里没有 VBA 工程（zip 里找不到 {VBA_流}）。"
+        "请换一个真正带宏的 .xlsm——在 Excel 里录一个宏另存即可。"
+    )
 
     输出 = Path(tempfile.mkdtemp(prefix="fb_plat_")) / "输出"
     opts = FormatOptions()
     report = format_job.execute(format_job.plan([源], opts, 输出), opts)
     assert report.failed == 0, report.summary()
 
-    产物 = next(输出.glob("*.xlsm"))
-    新 = load_workbook(产物, keep_vba=True)
-    宏还在 = getattr(新, "vba_archive", None) is not None
-    新.close()
-    assert 宏还在, "宏没保住"
-    return f"宏保留正常（{产物.name}）"
+    产物 = next(输出.glob("*.xlsm"), None)
+    assert 产物 is not None, f"没产出 .xlsm，输出目录里是：{[p.name for p in 输出.iterdir()]}"
+
+    新宏 = _取宏(产物)
+    assert 新宏 is not None, f"宏没保住：输出文件里找不到 {VBA_流}"
+    assert 新宏 == 原宏, (
+        f"VBA 工程的内容变了（原 {len(原宏)} 字节，现 {len(新宏)} 字节）"
+    )
+    return (
+        f"VBA 工程 {len(原宏)} 字节原样保留（{产物.name}）；"
+        "宏能不能跑请再用 Excel 打开确认一次"
+    )
 
 
 def _格式统一默认不改样式() -> str:

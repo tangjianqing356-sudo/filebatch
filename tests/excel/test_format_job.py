@@ -1,4 +1,5 @@
 """格式统一。重点是「能力边界要说清楚」。"""
+import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, Reference
 
@@ -622,3 +623,73 @@ def test_全部关掉时不会动任何格式(tmp_path):
     assert ws.column_dimensions["A"].width == 33, "列宽被覆盖了"
     assert ws.freeze_panes is None
     assert ws["A1"].font.bold is False
+
+
+# ---------------- .xlsm 的 VBA 工程 ----------------
+#
+# 真机验收那条曾经对一个**完全没有宏**的 .xlsm 报"宏保留正常"——
+# 因为它用 `wb.vba_archive is not None` 判断有没有宏，
+# 而 keep_vba=True 只是把源 zip 留着，没有宏时它也不是 None。
+# 那等于在最关键的 Gate 上给了假的信心。
+
+def 造带宏的xlsm(path, 宏内容: bytes):
+    """在一个正常工作簿里塞进 xl/vbaProject.bin。
+
+    内容不是合法的 VBA 工程，但这里要验的是"字节有没有被原样带过去"，
+    用什么字节无所谓。宏在 Excel 里还能不能跑，只能真机真文件确认。
+    """
+    import zipfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    普通 = path.with_suffix(".plain.xlsx")
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["姓名", "金额"]); ws.append(["张三", 100])
+    wb.save(普通)
+
+    with zipfile.ZipFile(普通) as zin, zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zout:
+        for it in zin.infolist():
+            zout.writestr(it, zin.read(it.filename))
+        zout.writestr("xl/vbaProject.bin", 宏内容)
+    普通.unlink()
+    return path
+
+
+def test_取宏能分清有没有宏(tmp_path, 写xlsx):
+    from filebatch.platformcheck import _取宏
+
+    没宏 = 写xlsx(tmp_path / "没宏.xlsm", [["A"], ["1"]])
+    assert _取宏(没宏) is None, "没有 vbaProject.bin 就该是 None"
+
+    有宏 = 造带宏的xlsm(tmp_path / "有宏.xlsm", b"\x01\x02VBA\x03" * 100)
+    assert _取宏(有宏) == b"\x01\x02VBA\x03" * 100
+
+
+def test_格式统一后VBA工程字节不变(tmp_path):
+    """keep_vba 的实际效果：VBA 工程原封不动地跟过去。"""
+    from filebatch.platformcheck import _取宏
+
+    宏 = bytes(range(256)) * 20
+    src = 造带宏的xlsm(tmp_path / "源" / "带宏.xlsm", 宏)
+
+    out = tmp_path / "输出"
+    opts = FormatOptions()
+    report = format_job.execute(format_job.plan([src], opts, out), opts)
+    assert report.failed == 0, report.summary()
+
+    产物 = out / "带宏_格式化.xlsm"
+    assert 产物.exists(), [p.name for p in out.iterdir()]
+    assert _取宏(产物) == 宏, "VBA 工程的字节被改动了"
+
+    # 样式也确实刷上了，不是原样复制文件了事
+    ws = load_workbook(产物).active
+    assert ws["A1"].font.bold is True
+
+
+def test_没有宏的xlsm不会被当成宏保留成功(tmp_path, 写xlsx):
+    """这条就是那个假阳性的回归锁。"""
+    from filebatch.platformcheck import _真实宏文件
+
+    没宏 = 写xlsx(tmp_path / "没宏.xlsm", [["A"], ["1"]])
+    with pytest.raises(AssertionError, match="没有 VBA 工程"):
+        _真实宏文件(str(没宏))
