@@ -202,7 +202,7 @@ def execute_split(
         except IndexError:
             report.add_fail(act.source, "页码超出范围，PDF 可能在处理过程中被改动")
         except OSError as e:
-            report.add_fail(act.source, 说明错误(e))
+            report.add_fail(act.source, 说明错误(e, act.source))
         except Exception as e:
             report.add_fail(act.source, f"未知错误：{type(e).__name__} {e}")
 

@@ -22,7 +22,7 @@ def 造(code: int, 文本: str = "boom") -> OSError:
     (errno.ENAMETOOLONG, "太长"),
     (errno.EROFS, "只读"),
     (errno.EACCES, "权限"),
-    (errno.ENOENT, "不存在"),
+    (errno.ENOENT, "找不到"),
     (errno.ENOTDIR, "文件夹"),
     (errno.ENODEV, "断开"),
     (errno.EXDEV, "复制"),
@@ -165,3 +165,46 @@ def test_非Windows的EINVAL仍然走兜底(monkeypatch):
     monkeypatch.setattr(mod.sys, "platform", "darwin")
     说法 = mod.describe(OSError(errno.EINVAL, "Invalid argument"))
     assert "太长" not in 说法
+
+
+def test_分得清源文件没了和输出位置没了():
+    """Windows CI 实测：输出指向不存在的盘符时，原来会说"文件已不存在"，
+    把矛头指向源文件，用户按提示去找源文件是白费功夫。
+    """
+    源 = Path("/某处/源文件.xlsx")
+
+    没源文件 = OSError(errno.ENOENT, "No such file", str(源))
+    assert "找不到这个文件" in describe(没源文件, source=源)
+
+    没输出位置 = OSError(errno.ENOENT, "No such file", "/不存在的盘/输出/结果.xlsx")
+    说法 = describe(没输出位置, source=源)
+    assert "输出位置" in 说法, 说法
+    assert "移动、重命名或删除" not in 说法, "别把矛头指向源文件"
+
+
+def test_Windows上也分得清():
+    源 = Path("C:/某处/源文件.xlsx")
+    e = OSError(2, "not found", "Z:/没有这个盘/输出/结果.xlsx")
+    e.winerror = 3
+    assert "输出位置" in describe(e, source=源)
+
+
+def test_不给source时保持原来的行为():
+    e = OSError(errno.ENOENT, "No such file", "/某处/x.txt")
+    assert "找不到这个文件" in describe(e)
+
+
+def test_输出位置真跑一遍给对提示(tmp_path):
+    import os as _os
+
+    from filebatch.core.excel import dedupe_job
+    from filebatch.core.excel.dedupe_job import DedupeOptions
+
+    src = 写表(tmp_path / "源" / "数据.xlsx", [["A"], ["1"], ["1"]])
+    不存在 = Path("Z:/没有这个盘/输出") if _os.name == "nt" else Path("/没有这个挂载点/输出")
+
+    opts = DedupeOptions()
+    report = dedupe_job.execute(dedupe_job.plan([src], opts, 不存在), opts)
+    assert report.failed == 1
+    消息 = report.items[0].message
+    assert "移动、重命名或删除" not in 消息, f"矛头指错了：{消息}"

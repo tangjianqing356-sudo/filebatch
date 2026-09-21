@@ -125,6 +125,11 @@ def main() -> int:
     if "--env-report" in sys.argv:
         return _env_report()
     if "--acceptance" in sys.argv:
+        # 和 --selftest / --platform-check 一样强制无头。
+        # Windows CI 上实测：不设这个的话，打包成窗口程序（console=False）的 exe
+        # 用真实 windows 平台插件跑起来，所有 print 都消失了，
+        # 退出码还是 0——于是 CI 那一步"通过"了却什么都没验证。
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from filebatch.acceptance import run
 
         return run("--open-output" in sys.argv)

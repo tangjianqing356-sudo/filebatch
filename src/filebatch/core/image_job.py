@@ -242,10 +242,10 @@ def execute(
             report.add_ok(act.source, act.target, act.note)
         except PermissionError:
             report.add_fail(act.source, "没有权限访问该文件，可能被其它程序占用")
-        except FileNotFoundError:
-            report.add_fail(act.source, "文件已不存在，可能在处理过程中被移动或删除")
+        except FileNotFoundError as e:
+            report.add_fail(act.source, 说明错误(e, act.source))
         except OSError as e:
-            report.add_fail(act.source, f"图片读写失败：{说明错误(e)}")
+            report.add_fail(act.source, f"图片读写失败：{说明错误(e, act.source)}")
         except Exception as e:
             report.add_fail(act.source, f"未知错误：{type(e).__name__} {e}")
 

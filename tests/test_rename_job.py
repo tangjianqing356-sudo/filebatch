@@ -62,7 +62,11 @@ def test_单个文件出错不影响其它文件(样例文件, tmp_path):
     report = rename_job.execute(actions)
     assert report.succeeded == 2
     assert report.failed == 1
-    assert "文件已不存在" in [i.message for i in report.items if not i.ok][0]
+    # 断意思别断措辞：这句话现在由 core/oserrors 统一给，
+    # 六个功能共用一份，措辞改了不该让这条无关的用例跟着炸
+    失败消息 = [i.message for i in report.items if not i.ok][0]
+    assert any(k in 失败消息 for k in ("找不到这个文件", "文件已不存在")), 失败消息
+    assert "Errno" not in 失败消息 and "Traceback" not in 失败消息, 失败消息
 
 
 def test_原地改名时新旧同名会被跳过(样例文件, tmp_path):

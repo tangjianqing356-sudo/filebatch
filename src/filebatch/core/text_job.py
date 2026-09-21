@@ -179,12 +179,12 @@ def execute(
             report.add_ok(act.source, act.target, f"替换 {count} 处")
         except PermissionError:
             report.add_fail(act.source, "没有权限写入，文件可能是只读的或被占用")
-        except FileNotFoundError:
-            report.add_fail(act.source, "文件已不存在，可能在处理过程中被移动或删除")
+        except FileNotFoundError as e:
+            report.add_fail(act.source, 说明错误(e, act.source))
         except UnicodeEncodeError as e:
             report.add_fail(act.source, f"替换后的内容无法用原编码({encoding})保存：{e}")
         except OSError as e:
-            report.add_fail(act.source, 说明错误(e))
+            report.add_fail(act.source, 说明错误(e, act.source))
         except Exception as e:
             report.add_fail(act.source, f"未知错误：{type(e).__name__} {e}")
 

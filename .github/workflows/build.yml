@@ -89,16 +89,34 @@ jobs:
           Write-Host "`n──── exe 是否还在（没被隔离）────"
           Test-Path dist_app/FileBatchTool/FileBatchTool.exe
 
+      # 下面三步都要核对输出里的结论行。
+      # 只看退出码是不够的：第一次跑 CI 时 --acceptance 一个字都没打印、
+      # 退出码却是 0，那一步"通过"了却什么都没验证。
       - name: 打包产物自检（验证冻结后依赖是否完整）
-        run: dist_app/FileBatchTool/FileBatchTool.exe --selftest
+        shell: pwsh
+        run: |
+          $out = dist_app/FileBatchTool/FileBatchTool.exe --selftest 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "自检退出码 $LASTEXITCODE" }
+          if ($out -notmatch '失败 0 项') { throw "自检没有打印预期的结论行（可能根本没输出）" }
 
       - name: 打包产物完整验收（11 个功能各跑一遍真实流程）
-        run: dist_app/FileBatchTool/FileBatchTool.exe --acceptance
+        shell: pwsh
+        run: |
+          $out = dist_app/FileBatchTool/FileBatchTool.exe --acceptance 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "验收退出码 $LASTEXITCODE" }
+          if ($out -notmatch '共 11 个功能，失败 0 个') { throw "验收没有打印预期的结论行（可能根本没输出）" }
 
       - name: 平台边界验收（中文/空格/长路径、文件占用、权限、盘符、.xlsm）
         # 这一项在 Windows 上才有真正的结论：文件锁、路径上限、权限模型
         # 和 macOS 完全不是一回事
-        run: dist_app/FileBatchTool/FileBatchTool.exe --platform-check
+        shell: pwsh
+        run: |
+          $out = dist_app/FileBatchTool/FileBatchTool.exe --platform-check 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "平台边界验收退出码 $LASTEXITCODE" }
+          if ($out -notmatch '共 \d+ 项，失败 0 项') { throw "平台边界验收没有打印预期的结论行（可能根本没输出）" }
 
       - name: 记录冷启动与内存
         run: dist_app/FileBatchTool/FileBatchTool.exe --measure-startup
@@ -154,4 +172,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
-        run: .venv/bin/python -m filebatch --platform-check
+        run: |
+          out=$(.venv/bin/python -m filebatch --platform-check 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "失败 0 项" || { echo "没有打印预期的结论行"; exit 1; }

@@ -155,7 +155,19 @@ def _文件被占用() -> str:
     源 = _写表(根 / "占用中.xlsx", [["A"], ["1"], ["1"]])
     输出 = 根 / "输出"
 
-    句柄 = open(源, "rb+")          # 模拟"文件正在 Excel 里开着"
+    # Windows 上 Python 的 open() 默认带 FILE_SHARE_READ，别的进程照样能读，
+    # 所以光 open 一下根本模拟不了"文件被 Excel 占着"。
+    # Windows CI 上实测这条就走进了"本平台不锁文件"分支，等于什么都没验。
+    句柄 = open(源, "rb+")
+    上锁 = False
+    if IS_WIN:
+        try:
+            import msvcrt
+
+            msvcrt.locking(句柄.fileno(), msvcrt.LK_NBLCK, 1)
+            上锁 = True
+        except OSError:
+            pass
     try:
         from filebatch.core.excel import dedupe_job
         from filebatch.core.excel.dedupe_job import DedupeOptions
@@ -166,8 +178,17 @@ def _文件被占用() -> str:
             消息 = report.items[0].message
             _不许泄漏(消息)
             return f"被占用时给出中文提示：{消息}"
-        return "本平台不锁文件，处理正常完成（Windows 上才是真考验）"
+        if 上锁:
+            return "已真正锁住文件，程序仍能读出来并正常完成（读取不受写锁影响）"
+        return "本平台不锁文件，处理正常完成——这条只能证明没崩，真占用要靠真机用 Excel 打开验"
     finally:
+        if 上锁:
+            try:
+                import msvcrt
+
+                msvcrt.locking(句柄.fileno(), msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
         句柄.close()
 
 
